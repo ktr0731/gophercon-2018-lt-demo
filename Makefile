@@ -4,6 +4,11 @@ SHELL := /bin/bash
 fmt:
 	@find . -name '*.proto' | xargs clang-format -i 
 
+
+.PHONY: proto
+proto:
+	@protoc --proto_path=$(GOPATH)/src --proto_path=$(GOPATH)/src/github.com/google/protobuf/src --proto_path api --go_out=plugins=grpc:api api/api.proto
+
 .PHONY: test
 test: vet lint unit-test e2e-test
 

@@ -18,26 +18,47 @@ enum Gender {
 }
 
 message User {
-  string first_name   = 1;
-  string last_name    = 2;
-  string display_name = 3;
-  Gender gender       = 4;
+  string name = 1;
+  string first_name   = 2;
+  string last_name    = 3;
+  string display_name = 4;
+  Gender gender       = 5;
 }
 
 message CreateUsersRequest {
-  repeated User users = 1;
+  message TempUser {
+    string first_name   = 1;
+    string last_name    = 2;
+    string display_name = 3;
+    Gender gender       = 4;
+  }
+  repeated TempUser users = 1;
 }
 
 message CreateUsersResponse {
   repeated User users = 1;
 }
 
-service GreeterService {
-  rpc SayHello(SayHelloRequest) returns (SayHelloResponse) {};
-  rpc SayHelloClientStream(stream SayHelloRequest) returns (SayHelloResponse) {};
-  rpc SayHelloServerStream(SayHelloRequest) returns (stream SayHelloResponse) {};
-  rpc SayHelloBidiStream(stream SayHelloRequest) returns (stream SayHelloResponse) {};
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
 }
+
+message GetUserRequest {
+  string name = 1;
+}
+
+message DeleteUserRequest {
+  string name = 1;
+}
+
+// service GreeterService {
+//   rpc SayHello(SayHelloRequest) returns (SayHelloResponse) {};
+//   rpc SayHelloClientStream(stream SayHelloRequest) returns (SayHelloResponse) {};
+//   rpc SayHelloServerStream(SayHelloRequest) returns (stream SayHelloResponse) {};
+//   rpc SayHelloBidiStream(stream SayHelloRequest) returns (stream SayHelloResponse) {};
+// }
 
 enum Language {
   ENGLISH  = 0;
