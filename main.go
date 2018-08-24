@@ -1,13 +1,9 @@
 package main
 
 import (
-	"crypto/sha256"
-	"errors"
-	"fmt"
-	"hash"
-	"io"
 	"log"
 	"net"
+	"sync"
 
 	"golang.org/x/net/context"
 
@@ -15,76 +11,75 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/golang/protobuf/ptypes/empty"
 )
 
-type User struct {
-	id                  string
-	firstName, lastName string
-	gender              api.Gender
-}
-
 type UserService struct {
-	store map[string]*User
-	h     hash.Hash
+	store sync.Map
 }
 
 func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersRequest) (*api.CreateUsersResponse, error) {
+	users := make([]*api.User, 0, len(req.GetUsers()))
 	for _, user := range req.GetUsers() {
-		if _, err := io.WriteString(s.h, user.GetFirstName()+user.GetLastName()); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to generate id: %s", err)
+		u := &api.User{
+			Name:        user.GetDisplayName(),
+			FirstName:   user.GetFirstName(),
+			LastName:    user.GetLastName(),
+			DisplayName: user.GetDisplayName(),
+			Gender:      user.GetGender(),
 		}
-		id := fmt.Sprintf("%x", s.h.Sum(nil))
-		s.store[id] = &User{
-			id:        id,
-			firstName: user.GetFirstName(),
-			lastName:  user.GetLastName(),
-			gender:    user.GetGender(),
-		}
-		s.h.Reset()
+		s.store.Store(user.GetDisplayName(), u)
+		users = append(users, u)
 	}
 	return &api.CreateUsersResponse{
-		Message: "registration successful",
+		Users: users,
 	}, nil
 }
 
 func (s *UserService) ListUsers(ctx context.Context, req *api.ListUsersRequest) (*api.ListUsersResponse, error) {
-	users := make([]*api.ListUsersResponse_User, 0, len(s.store))
-	for _, user := range s.store {
-		users = append(users, &api.ListUsersResponse_User{
-			Id:   user.id,
-			Name: user.firstName + " " + user.lastName,
-		})
-	}
+	var users []*api.User
+	s.store.Range(func(_, v interface{}) bool {
+		users = append(users, v.(*api.User))
+		return true
+	})
 	return &api.ListUsersResponse{
 		Users: users,
 	}, nil
 }
 
-func (s *UserService) GetUser(ctx context.Context, req *api.GetUserRequest) (*api.GetUserResponse, error) {
-	user, ok := s.store[req.GetId()]
-	if !ok {
-		return nil, errors.New("no such user")
+func (s *UserService) GetUser(ctx context.Context, req *api.GetUserRequest) (*api.User, error) {
+	var u *api.User
+	s.store.Range(func(k, v interface{}) bool {
+		if k.(string) == req.GetName() {
+			u = v.(*api.User)
+			return false
+		}
+		return true
+	})
+	if u != nil {
+		return u, nil
 	}
-	return &api.GetUserResponse{
-		User: &api.User{
-			FirstName: user.firstName,
-			LastName:  user.lastName,
-			Gender:    user.gender,
-		},
-	}, nil
+	return nil, status.Errorf(codes.NotFound, "no such user: %s", req.GetName())
+}
+
+func (s *UserService) DeleteUser(ctx context.Context, req *api.DeleteUserRequest) (*empty.Empty, error) {
+	s.store.Delete(req.GetName())
+	return &empty.Empty{}, nil
 }
 
 func main() {
-	l, err := net.Listen("tcp", "localhost:50051")
+	addr := "localhost:50051"
+	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	server := grpc.NewServer()
 	api.RegisterUserServiceServer(server, &UserService{
-		store: map[string]*User{},
-		h:     sha256.New(),
+		store: sync.Map{},
 	})
+	log.Printf("Listen at %s\n", addr)
 	if err := server.Serve(l); err != nil {
 		log.Fatal(err)
 	}
