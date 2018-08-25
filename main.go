@@ -1,9 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"log"
+	"math/rand"
 	"net"
+	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/context"
 
@@ -15,9 +20,9 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 )
 
-type UserService struct {
-	store sync.Map
-}
+var store = sync.Map{}
+
+type UserService struct{}
 
 func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersRequest) (*api.CreateUsersResponse, error) {
 	users := make([]*api.User, 0, len(req.GetUsers()))
@@ -29,7 +34,7 @@ func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersReque
 			DisplayName: user.GetDisplayName(),
 			Gender:      user.GetGender(),
 		}
-		s.store.Store(user.GetDisplayName(), u)
+		store.Store(user.GetDisplayName(), u)
 		users = append(users, u)
 	}
 	return &api.CreateUsersResponse{
@@ -39,7 +44,7 @@ func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersReque
 
 func (s *UserService) ListUsers(ctx context.Context, req *api.ListUsersRequest) (*api.ListUsersResponse, error) {
 	var users []*api.User
-	s.store.Range(func(_, v interface{}) bool {
+	store.Range(func(_, v interface{}) bool {
 		users = append(users, v.(*api.User))
 		return true
 	})
@@ -50,7 +55,7 @@ func (s *UserService) ListUsers(ctx context.Context, req *api.ListUsersRequest) 
 
 func (s *UserService) GetUser(ctx context.Context, req *api.GetUserRequest) (*api.User, error) {
 	var u *api.User
-	s.store.Range(func(k, v interface{}) bool {
+	store.Range(func(k, v interface{}) bool {
 		if k.(string) == req.GetName() {
 			u = v.(*api.User)
 			return false
@@ -64,8 +69,83 @@ func (s *UserService) GetUser(ctx context.Context, req *api.GetUserRequest) (*ap
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, req *api.DeleteUserRequest) (*empty.Empty, error) {
-	s.store.Delete(req.GetName())
+	store.Delete(req.GetName())
 	return &empty.Empty{}, nil
+}
+
+type GreeterService struct {
+	api.GreeterServiceServer
+}
+
+func (s *GreeterService) SayHello(ctx context.Context, req *api.SayHelloRequest) (*api.SayHelloResponse, error) {
+	if _, ok := store.Load(req.GetGreeterName()); !ok {
+		return nil, status.Errorf(codes.NotFound, "no such user: %s", req.GetGreeterName())
+	}
+	return &api.SayHelloResponse{
+		Message: sayHello(req.GetGreeterName(), req.GetLanguage()),
+	}, nil
+}
+
+func (s *GreeterService) SayHelloClientStream(stream api.GreeterService_SayHelloClientStreamServer) error {
+	var greeters []string
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&api.SayHelloResponse{
+				Message: sayHello(strings.Join(greeters, ", "), req.GetLanguage()),
+			})
+		}
+		if err != nil {
+			return err
+		}
+
+		greeters = append(greeters, req.GetGreeterName())
+	}
+}
+
+func (s *GreeterService) SayHelloServerStream(req *api.SayHelloRequest, stream api.GreeterService_SayHelloServerStreamServer) error {
+	n := rand.Intn(5) + 1
+	message := sayHello(req.GetGreeterName(), req.GetLanguage())
+	for i := 0; i < n; i++ {
+		if err := stream.Send(&api.SayHelloResponse{
+			Message: message,
+		}); err != nil {
+			return err
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return nil
+}
+
+func (s *GreeterService) SayHelloBidiStream(stream api.GreeterService_SayHelloBidiStreamServer) error {
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		if err := stream.Send(&api.SayHelloResponse{
+			Message: sayHello(req.GetGreeterName(), req.GetLanguage()),
+		}); err != nil {
+			return err
+		}
+	}
+}
+
+func sayHello(name string, language api.Language) string {
+	var format string
+	switch language {
+	case api.Language_ENGLISH:
+		format = "Hello, %s!"
+	case api.Language_JAPANESE:
+		format = "こんにちは、%s！"
+	default:
+		format = "Hello, %s!"
+	}
+	return fmt.Sprintf(format, name)
 }
 
 func main() {
@@ -76,9 +156,8 @@ func main() {
 	}
 
 	server := grpc.NewServer()
-	api.RegisterUserServiceServer(server, &UserService{
-		store: sync.Map{},
-	})
+	api.RegisterUserServiceServer(server, &UserService{})
+	api.RegisterGreeterServiceServer(server, &GreeterService{})
 	log.Printf("Listen at %s\n", addr)
 	if err := server.Serve(l); err != nil {
 		log.Fatal(err)

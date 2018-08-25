@@ -53,14 +53,23 @@ message DeleteUserRequest {
   string name = 1;
 }
 
-// service GreeterService {
-//   rpc SayHello(SayHelloRequest) returns (SayHelloResponse) {};
-//   rpc SayHelloClientStream(stream SayHelloRequest) returns (SayHelloResponse) {};
-//   rpc SayHelloServerStream(SayHelloRequest) returns (stream SayHelloResponse) {};
-//   rpc SayHelloBidiStream(stream SayHelloRequest) returns (stream SayHelloResponse) {};
-// }
+service GreeterService {
+  rpc SayHello(SayHelloRequest) returns (SayHelloResponse) {};
+  rpc SayHelloClientStream(stream SayHelloRequest) returns (SayHelloResponse) {};
+  rpc SayHelloServerStream(SayHelloRequest) returns (stream SayHelloResponse) {};
+  rpc SayHelloBidiStream(stream SayHelloRequest) returns (stream SayHelloResponse) {};
+}
 
 enum Language {
   ENGLISH  = 0;
   JAPANESE = 1;
+}
+
+message SayHelloRequest {
+  string greeter_name = 1;
+  Language language = 2;
+}
+
+message SayHelloResponse {
+  string message = 1;
 }
