@@ -28,13 +28,12 @@ func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersReque
 	users := make([]*api.User, 0, len(req.GetUsers()))
 	for _, user := range req.GetUsers() {
 		u := &api.User{
-			Name:        user.GetDisplayName(),
-			FirstName:   user.GetFirstName(),
-			LastName:    user.GetLastName(),
-			DisplayName: user.GetDisplayName(),
-			Gender:      user.GetGender(),
+			Name:      fmt.Sprintf("%s %s", user.GetFirstName(), user.GetLastName()),
+			FirstName: user.GetFirstName(),
+			LastName:  user.GetLastName(),
+			Language:  user.GetLanguage(),
 		}
-		store.Store(user.GetDisplayName(), u)
+		store.Store(u.Name, u)
 		users = append(users, u)
 	}
 	return &api.CreateUsersResponse{
@@ -78,11 +77,12 @@ type GreeterService struct {
 }
 
 func (s *GreeterService) SayHello(ctx context.Context, req *api.SayHelloRequest) (*api.SayHelloResponse, error) {
-	if _, ok := store.Load(req.GetGreeterName()); !ok {
-		return nil, status.Errorf(codes.NotFound, "no such user: %s", req.GetGreeterName())
+	user, err := findUser(req.GetGreeterName())
+	if err != nil {
+		return nil, err
 	}
 	return &api.SayHelloResponse{
-		Message: sayHello(req.GetGreeterName(), req.GetLanguage()),
+		Message: sayHello(user.Name, user.Language),
 	}, nil
 }
 
@@ -92,9 +92,15 @@ func (s *GreeterService) SayHelloClientStream(stream api.GreeterService_SayHello
 		req, err := stream.Recv()
 		if err == io.EOF {
 			return stream.SendAndClose(&api.SayHelloResponse{
-				Message: sayHello(strings.Join(greeters, ", "), req.GetLanguage()),
+				// TODO: language
+				Message: sayHello(strings.Join(greeters, ", "), api.Language_ENGLISH),
 			})
 		}
+		if err != nil {
+			return err
+		}
+
+		_, err = findUser(req.GetGreeterName())
 		if err != nil {
 			return err
 		}
@@ -105,10 +111,15 @@ func (s *GreeterService) SayHelloClientStream(stream api.GreeterService_SayHello
 
 func (s *GreeterService) SayHelloServerStream(req *api.SayHelloRequest, stream api.GreeterService_SayHelloServerStreamServer) error {
 	n := rand.Intn(5) + 1
-	message := sayHello(req.GetGreeterName(), req.GetLanguage())
+	user, err := findUser(req.GetGreeterName())
+	if err != nil {
+		return err
+	}
+
+	message := sayHello(user.GetName(), user.GetLanguage())
 	for i := 0; i < n; i++ {
 		if err := stream.Send(&api.SayHelloResponse{
-			Message: message,
+			Message: fmt.Sprintf("%s %d", message, n+1),
 		}); err != nil {
 			return err
 		}
@@ -146,6 +157,14 @@ func sayHello(name string, language api.Language) string {
 		format = "Hello, %s!"
 	}
 	return fmt.Sprintf(format, name)
+}
+
+func findUser(key string) (*api.User, error) {
+	u, ok := store.Load(key)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "no such user: %s", key)
+	}
+	return u.(*api.User), nil
 }
 
 func main() {
