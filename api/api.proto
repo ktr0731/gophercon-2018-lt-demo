@@ -11,26 +11,23 @@ service UserService {
   rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {};
 }
 
-enum Gender {
-  MALE   = 0;
-  FEMALE = 1;
-  X      = 2;
+enum Language {
+  ENGLISH  = 0;
+  JAPANESE = 1;
 }
 
 message User {
-  string name = 1;
-  string display_name = 2;
-  string first_name   = 3;
-  string last_name    = 4;
-  Gender gender       = 5;
+  string name       = 1;
+  string first_name = 2;
+  string last_name  = 3;
+  Language language = 4;
 }
 
 message CreateUsersRequest {
   message TempUser {
-    string display_name = 1;
-    string first_name   = 2;
-    string last_name    = 3;
-    Gender gender       = 4;
+    string first_name = 1;
+    string last_name  = 2;
+    Language language = 3;
   }
   repeated TempUser users = 1;
 }
@@ -60,14 +57,8 @@ service GreeterService {
   rpc SayHelloBidiStream(stream SayHelloRequest) returns (stream SayHelloResponse) {};
 }
 
-enum Language {
-  ENGLISH  = 0;
-  JAPANESE = 1;
-}
-
 message SayHelloRequest {
   string greeter_name = 1;
-  Language language = 2;
 }
 
 message SayHelloResponse {
