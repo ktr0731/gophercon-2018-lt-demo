@@ -32,7 +32,7 @@ func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersReque
 			FirstName:   user.GetFirstName(),
 			LastName:    user.GetLastName(),
 			DisplayName: user.GetDisplayName(),
-			Gender:      user.GetGender(),
+			Language:    user.GetLanguage(),
 		}
 		store.Store(user.GetDisplayName(), u)
 		users = append(users, u)
@@ -78,11 +78,13 @@ type GreeterService struct {
 }
 
 func (s *GreeterService) SayHello(ctx context.Context, req *api.SayHelloRequest) (*api.SayHelloResponse, error) {
-	if _, ok := store.Load(req.GetGreeterName()); !ok {
-		return nil, status.Errorf(codes.NotFound, "no such user: %s", req.GetGreeterName())
+	user, err := findUser(req.GetGreeterName())
+	if err != nil {
+		return nil, err
 	}
+
 	return &api.SayHelloResponse{
-		Message: sayHello(req.GetGreeterName(), req.GetLanguage()),
+		Message: sayHello(user.Name, user.Language),
 	}, nil
 }
 
@@ -92,23 +94,34 @@ func (s *GreeterService) SayHelloClientStream(stream api.GreeterService_SayHello
 		req, err := stream.Recv()
 		if err == io.EOF {
 			return stream.SendAndClose(&api.SayHelloResponse{
-				Message: sayHello(strings.Join(greeters, ", "), req.GetLanguage()),
+				// TODO
+				Message: sayHello(strings.Join(greeters, ", "), api.Language_ENGLISH),
 			})
 		}
 		if err != nil {
 			return err
 		}
 
-		greeters = append(greeters, req.GetGreeterName())
+		user, err := findUser(req.GetGreeterName())
+		if err != nil {
+			return err
+		}
+
+		greeters = append(greeters, user.Name)
 	}
 }
 
 func (s *GreeterService) SayHelloServerStream(req *api.SayHelloRequest, stream api.GreeterService_SayHelloServerStreamServer) error {
 	n := rand.Intn(5) + 1
-	message := sayHello(req.GetGreeterName(), req.GetLanguage())
+	user, err := findUser(req.GetGreeterName())
+	if err != nil {
+		return err
+	}
+
+	message := sayHello(user.Name, user.Language)
 	for i := 0; i < n; i++ {
 		if err := stream.Send(&api.SayHelloResponse{
-			Message: message,
+			Message: fmt.Sprintf("%s. I greet %d times.", message, i+1),
 		}); err != nil {
 			return err
 		}
@@ -127,8 +140,13 @@ func (s *GreeterService) SayHelloBidiStream(stream api.GreeterService_SayHelloBi
 			return err
 		}
 
+		user, err := findUser(req.GetGreeterName())
+		if err != nil {
+			return err
+		}
+
 		if err := stream.Send(&api.SayHelloResponse{
-			Message: sayHello(req.GetGreeterName(), req.GetLanguage()),
+			Message: sayHello(user.Name, user.Language),
 		}); err != nil {
 			return err
 		}
@@ -146,6 +164,14 @@ func sayHello(name string, language api.Language) string {
 		format = "Hello, %s!"
 	}
 	return fmt.Sprintf(format, name)
+}
+
+func findUser(key string) (*api.User, error) {
+	user, ok := store.Load(key)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "no such user: %s", key)
+	}
+	return user.(*api.User), nil
 }
 
 func main() {
