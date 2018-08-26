@@ -18,6 +18,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/golang/protobuf/ptypes/empty"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var store = sync.Map{}
@@ -28,13 +31,12 @@ func (s *UserService) CreateUsers(ctx context.Context, req *api.CreateUsersReque
 	users := make([]*api.User, 0, len(req.GetUsers()))
 	for _, user := range req.GetUsers() {
 		u := &api.User{
-			Name:        user.GetDisplayName(),
-			FirstName:   user.GetFirstName(),
-			LastName:    user.GetLastName(),
-			DisplayName: user.GetDisplayName(),
-			Language:    user.GetLanguage(),
+			Name:      fmt.Sprintf("%s_%s", user.GetFirstName(), user.GetLastName()),
+			FirstName: user.GetFirstName(),
+			LastName:  user.GetLastName(),
+			Language:  user.GetLanguage(),
 		}
-		store.Store(user.GetDisplayName(), u)
+		store.Store(u.Name, u)
 		users = append(users, u)
 	}
 	return &api.CreateUsersResponse{
@@ -84,7 +86,7 @@ func (s *GreeterService) SayHello(ctx context.Context, req *api.SayHelloRequest)
 	}
 
 	return &api.SayHelloResponse{
-		Message: sayHello(user.Name, user.Language),
+		Message: sayHello(user.LastName, user.Language),
 	}, nil
 }
 
@@ -107,7 +109,7 @@ func (s *GreeterService) SayHelloClientStream(stream api.GreeterService_SayHello
 			return err
 		}
 
-		greeters = append(greeters, user.Name)
+		greeters = append(greeters, user.LastName)
 	}
 }
 
@@ -118,7 +120,7 @@ func (s *GreeterService) SayHelloServerStream(req *api.SayHelloRequest, stream a
 		return err
 	}
 
-	message := sayHello(user.Name, user.Language)
+	message := sayHello(user.LastName, user.Language)
 	for i := 0; i < n; i++ {
 		if err := stream.Send(&api.SayHelloResponse{
 			Message: fmt.Sprintf("%s. I greet %d times.", message, i+1),
@@ -146,7 +148,7 @@ func (s *GreeterService) SayHelloBidiStream(stream api.GreeterService_SayHelloBi
 		}
 
 		if err := stream.Send(&api.SayHelloResponse{
-			Message: sayHello(user.Name, user.Language),
+			Message: sayHello(user.LastName, user.Language),
 		}); err != nil {
 			return err
 		}
@@ -180,6 +182,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// for pprof
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	server := grpc.NewServer()
 	api.RegisterUserServiceServer(server, &UserService{})
