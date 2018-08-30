@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"github.com/ktr0731/gophercon-2018-lt-demo/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
 	"github.com/golang/protobuf/ptypes/empty"
@@ -22,6 +24,8 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 )
+
+var useReflection = flag.Bool("r", false, "enable gRPC reflection")
 
 var store = sync.Map{}
 
@@ -191,6 +195,13 @@ func main() {
 	server := grpc.NewServer()
 	api.RegisterUserServiceServer(server, &UserService{})
 	api.RegisterGreeterServiceServer(server, &GreeterService{})
+
+	flag.Parse()
+	if *useReflection {
+		reflection.Register(server)
+		log.Println("gRPC reflection enabled")
+	}
+
 	log.Printf("Listen at %s\n", addr)
 	if err := server.Serve(l); err != nil {
 		log.Fatal(err)
